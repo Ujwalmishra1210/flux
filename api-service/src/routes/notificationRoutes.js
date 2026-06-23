@@ -44,9 +44,16 @@ router.post("/", async (req, res) => {
         await notificationQueue.add(
             "send-notification",
             {
-                notificationId: id
+              notificationId: id
+            },
+            {
+              attempts: 3,
+              backoff: {
+                type: "exponential",
+                delay: 2000
+              }
             }
-        );
+          );
         res.status(201).json({
             id,
             message:

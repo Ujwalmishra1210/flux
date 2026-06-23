@@ -22,7 +22,9 @@ const worker = new Worker(
       "Processing notification:",
       notificationId
     );
-
+    console.log(
+        `Attempt ${job.attemptsMade + 1}`
+      );
     await pool.query(
       `
       UPDATE notifications
@@ -34,6 +36,22 @@ const worker = new Worker(
         notificationId
       ]
     );
+
+    const shouldFail =
+      Math.random() < 0.5;
+
+    if (shouldFail) {
+
+      console.log(
+        "Simulated failure:",
+        notificationId
+      );
+
+      throw new Error(
+        "Notification provider unavailable"
+      );
+
+    }
 
     await new Promise(
       resolve =>
@@ -60,6 +78,43 @@ const worker = new Worker(
   },
   {
     connection,
+  }
+);
+
+worker.on(
+  "failed",
+  async (job, err) => {
+
+    console.log(
+      `Job ${job.id} failed`
+    );
+
+    console.log(
+      err.message
+    );
+
+    if (
+      job.attemptsMade >=
+      job.opts.attempts
+    ) {
+
+      await pool.query(
+        `
+        UPDATE notifications
+        SET status='FAILED'
+        WHERE id=$1
+        `,
+        [
+          job.data.notificationId
+        ]
+      );
+
+      console.log(
+        "Marked FAILED"
+      );
+
+    }
+
   }
 );
 
