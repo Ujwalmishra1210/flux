@@ -4,7 +4,7 @@ const { Worker, Queue } = require("bullmq");
 const IORedis = require("ioredis");
 
 const pool = require("./db/postgres");
-
+const logger = require("./logger");
 const connection = new IORedis({
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,
@@ -30,7 +30,10 @@ const worker = new Worker(
   "notifications",
   async (job) => {
     if (circuitOpen) {
-      console.log("Circuit OPEN - skipping job:", job.data.notificationId);
+      logger.warn("Circuit open - skipping notification", {
+        notificationId: job.data.notificationId,
+        jobId: job.id
+      });
       return;
     }
     const lockKey = getLockKey(job.data.notificationId);
@@ -38,7 +41,10 @@ const worker = new Worker(
     const existingLock = await redis.get(lockKey);
     
     if (existingLock) {
-      console.log(`Duplicate job detected: ${job.data.notificationId}`);
+      logger.warn("Duplicate job detected", {
+        notificationId: job.data.notificationId,
+        jobId: job.id
+      });
       return;
     }
     
@@ -46,10 +52,10 @@ const worker = new Worker(
     const notificationId =
       job.data.notificationId;
 
-    console.log(
-      "Processing notification:",
-      notificationId
-    );
+      logger.info("Processing notification", {
+        notificationId,
+        jobId: job.id
+      });
 
     const result = await pool.query(
       `
@@ -61,14 +67,17 @@ const worker = new Worker(
     );
     
     if (result.rows[0].status === "SENT") {
-      console.log(
-        `Notification ${notificationId} already processed. Skipping.`
-      );
+      logger.info("Notification already processed", {
+        notificationId,
+        jobId: job.id
+      });
       return;
     }
-    console.log(
-        `Attempt ${job.attemptsMade + 1}`
-      );
+    logger.info("Processing attempt", {
+      notificationId,
+      jobId: job.id,
+      attempt: job.attemptsMade + 1
+    });
       const updateResult = await pool.query(
         `
         UPDATE notifications
@@ -81,9 +90,10 @@ const worker = new Worker(
       );
       
       if (updateResult.rowCount === 0) {
-        console.log(
-          `Notification ${notificationId} is already being processed or completed. Skipping.`
-        );
+        logger.warn("Notification already processing or completed", {
+          notificationId,
+          jobId: job.id
+        });
         return;
       }
 
@@ -91,21 +101,23 @@ const worker = new Worker(
 
     if (shouldFail) {
 
-      console.log(
-        "Simulated failure:",
-        notificationId
-      );
+      logger.warn("Simulated failure", {
+        notificationId,
+        jobId: job.id
+      });
       failureCount++;
 
 if (failureCount >= FAILURE_THRESHOLD) {
   circuitOpen = true;
 
-  console.log("🔥 CIRCUIT OPENED - too many failures");
+  logger.error("Circuit opened", {
+    failureCount
+  });
 
   setTimeout(() => {
     circuitOpen = false;
     failureCount = 0;
-    console.log("🟢 CIRCUIT RESET - system recovered");
+    logger.info("Circuit reset");
   }, CIRCUIT_RESET_TIME);
 }
       throw new Error(
@@ -134,12 +146,15 @@ if (failureCount >= FAILURE_THRESHOLD) {
     try {
       await redis.del(lockKey);
     } catch (e) {
-      console.error("Lock cleanup failed:", e.message);
+      logger.error("Failed to release Redis lock", {
+        lockKey,
+        error: e.message
+      });
     }
-    console.log(
-      "Notification sent:",
-      notificationId
-    );
+    logger.info("Notification sent", {
+      notificationId,
+      jobId: job.id
+    });
     failureCount = 0;
   },
   {
@@ -151,19 +166,19 @@ worker.on(
   "failed",
   async (job, err) => {
     const lockKey = getLockKey(job.data.notificationId);
-    console.log(
-      `Job ${job.id} failed`
-    );
 
-    console.log(
-      err.message
-    );
+    logger.error("Job failed", {
+      jobId: job.id,
+      notificationId: job.data.notificationId
+    });
 
-    if (
-      job.attemptsMade >=
-      job.opts.attempts
-    ) {
-    
+    logger.error(err.message, {
+      jobId: job.id,
+      notificationId: job.data.notificationId
+    });
+
+    if (job.attemptsMade >= job.opts.attempts) {
+
       await deadLetterQueue.add(
         "dead-notification",
         {
@@ -173,7 +188,7 @@ worker.on(
           failedAt: new Date().toISOString()
         }
       );
-    
+
       await pool.query(
         `
         UPDATE notifications
@@ -188,17 +203,22 @@ worker.on(
           job.data.notificationId
         ]
       );
+
       try {
         await redis.del(lockKey);
       } catch (e) {
-        console.error("Lock cleanup failed:", e.message);
+        logger.error("Failed to release Redis lock", {
+          lockKey,
+          error: e.message
+        });
       }
-    
-      console.log(
-        `Notification ${job.data.notificationId} moved to Dead Letter Queue`
-      );
-    
-    }else {
+
+      logger.error("Notification moved to Dead Letter Queue", {
+        jobId: job.id,
+        notificationId: job.data.notificationId
+      });
+
+    } else {
 
       await pool.query(
         `
@@ -212,13 +232,23 @@ worker.on(
         [job.data.notificationId]
       );
 
-      console.log(
-        "Reset status to PENDING for retry"
-      );
+      // Release the lock so BullMQ retry can process it again
+      try {
+        await redis.del(lockKey);
+      } catch (e) {
+        logger.error("Failed to release Redis lock", {
+          lockKey,
+          error: e.message
+        });
+      }
+
+      logger.info("Notification reset to PENDING for retry", {
+        jobId: job.id,
+        notificationId: job.data.notificationId
+      });
 
     }
-
   }
 );
 
-console.log("Worker Started");
+logger.info("Worker started");
