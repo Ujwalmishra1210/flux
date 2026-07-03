@@ -252,3 +252,30 @@ worker.on(
 );
 
 logger.info("Worker started");
+
+async function shutdown(signal) {
+  logger.info(`Received ${signal}. Shutting down worker...`);
+
+  try {
+    await worker.close();
+    logger.info("BullMQ worker closed");
+
+    await pool.end();
+    logger.info("PostgreSQL connection closed");
+
+    await redis.quit();
+    await connection.quit();
+    logger.info("Redis connections closed");
+
+    process.exit(0);
+
+  } catch (err) {
+    logger.error("Error during shutdown", {
+      error: err.message
+    });
+
+    process.exit(1);
+  }
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
