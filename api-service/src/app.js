@@ -4,9 +4,11 @@ const express = require("express");
 const pool = require("./db/postgres");
 const notificationRoutes =
     require("./routes/notificationRoutes");
+    const rateLimiter = require("./middleware/rateLimiter");
 const app = express();
 
 app.use(express.json());
+app.use(rateLimiter);
 app.use(
     "/notifications",
     notificationRoutes
