@@ -29,33 +29,40 @@ const deadLetterQueue = new Queue(
 const worker = new Worker(
   "notifications",
   async (job) => {
+    const {
+      notificationId,
+      correlationId
+    } = job.data;
+
     if (circuitOpen) {
       logger.warn("Circuit open - skipping notification", {
-        notificationId: job.data.notificationId,
+        notificationId,
+        correlationId,
         jobId: job.id
       });
       return;
     }
-    const lockKey = getLockKey(job.data.notificationId);
+    const lockKey = getLockKey(notificationId);
 
     const existingLock = await redis.get(lockKey);
     
     if (existingLock) {
       logger.warn("Duplicate job detected", {
-        notificationId: job.data.notificationId,
+        notificationId,
+        correlationId,
         jobId: job.id
       });
       return;
     }
     
     await redis.set(lockKey, "locked", "EX", 60);
-    const notificationId =
-      job.data.notificationId;
+    
 
-      logger.info("Processing notification", {
-        notificationId,
-        jobId: job.id
-      });
+    logger.info("Processing notification", {
+      notificationId,
+      correlationId,
+      jobId: job.id
+    });
 
     const result = await pool.query(
       `
@@ -69,12 +76,14 @@ const worker = new Worker(
     if (result.rows[0].status === "SENT") {
       logger.info("Notification already processed", {
         notificationId,
+        correlationId,
         jobId: job.id
       });
       return;
     }
     logger.info("Processing attempt", {
       notificationId,
+      correlationId,
       jobId: job.id,
       attempt: job.attemptsMade + 1
     });
@@ -92,6 +101,7 @@ const worker = new Worker(
       if (updateResult.rowCount === 0) {
         logger.warn("Notification already processing or completed", {
           notificationId,
+          correlationId,
           jobId: job.id
         });
         return;
@@ -103,6 +113,7 @@ const worker = new Worker(
 
       logger.warn("Simulated failure", {
         notificationId,
+        correlationId,
         jobId: job.id
       });
       failureCount++;
@@ -153,6 +164,7 @@ if (failureCount >= FAILURE_THRESHOLD) {
     }
     logger.info("Notification sent", {
       notificationId,
+      correlationId,
       jobId: job.id
     });
     failureCount = 0;
@@ -165,16 +177,23 @@ if (failureCount >= FAILURE_THRESHOLD) {
 worker.on(
   "failed",
   async (job, err) => {
-    const lockKey = getLockKey(job.data.notificationId);
+
+    const {
+      notificationId,
+      correlationId
+    } = job.data;
+    const lockKey = getLockKey(notificationId);
 
     logger.error("Job failed", {
       jobId: job.id,
-      notificationId: job.data.notificationId
+      notificationId,
+      correlationId
     });
 
     logger.error(err.message, {
       jobId: job.id,
-      notificationId: job.data.notificationId
+      notificationId,
+      correlationId
     });
 
     if (job.attemptsMade >= job.opts.attempts) {
@@ -182,7 +201,8 @@ worker.on(
       await deadLetterQueue.add(
         "dead-notification",
         {
-          notificationId: job.data.notificationId,
+          notificationId,
+          correlationId,
           originalJobId: job.id,
           reason: err.message,
           failedAt: new Date().toISOString()
@@ -200,7 +220,7 @@ worker.on(
         `,
         [
           err.message,
-          job.data.notificationId
+          notificationId
         ]
       );
 
@@ -215,7 +235,8 @@ worker.on(
 
       logger.error("Notification moved to Dead Letter Queue", {
         jobId: job.id,
-        notificationId: job.data.notificationId
+        notificationId,
+        correlationId
       });
 
     } else {
@@ -229,7 +250,7 @@ worker.on(
             failed_at = NULL
         WHERE id = $1
         `,
-        [job.data.notificationId]
+        [notificationId]
       );
 
       // Release the lock so BullMQ retry can process it again
@@ -244,7 +265,8 @@ worker.on(
 
       logger.info("Notification reset to PENDING for retry", {
         jobId: job.id,
-        notificationId: job.data.notificationId
+        notificationId,
+        correlationId
       });
 
     }

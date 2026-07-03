@@ -1,5 +1,5 @@
 const express = require("express");
-
+const logger = require("../logger");
 const crypto = require("crypto");
 const pool = require("../db/postgres");
 const notificationQueue =
@@ -26,7 +26,7 @@ router.post("/", async (req, res) => {
         } = req.body;
 
         const id = crypto.randomUUID();
-
+        const correlationId = crypto.randomUUID();
         await pool.query(
             `
             INSERT INTO notifications
@@ -51,23 +51,31 @@ router.post("/", async (req, res) => {
             ]
         );
         await notificationQueue.add(
-            "send-notification",
-            {
-              notificationId: id
-            },
-            {
-              attempts: 3,
-              backoff: {
-                type: "exponential",
-                delay: 2000
-              }
+          "send-notification",
+          {
+            notificationId: id,
+            correlationId
+          },
+          {
+            attempts: 3,
+            backoff: {
+              type: "exponential",
+              delay: 2000
             }
-          );
-        res.status(201).json({
-            id,
-            message:
-                "Notification created"
+          }
+        );
+        logger.info("Notification queued", {
+          notificationId: id,
+          correlationId,
+          eventType,
+          recipient,
+          channel
         });
+        res.status(201).json({
+          id,
+          correlationId,
+          message: "Notification created"
+      });
 
     } catch (err) {
 
