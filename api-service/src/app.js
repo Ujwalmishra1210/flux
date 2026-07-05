@@ -5,6 +5,8 @@ const pool = require("./db/postgres");
 const notificationRoutes =
     require("./routes/notificationRoutes");
     const rateLimiter = require("./middleware/rateLimiter");
+    const swaggerUi = require("swagger-ui-express");
+const swaggerSpec = require("./swagger");
 const app = express();
 
 app.use(express.json());
@@ -12,6 +14,11 @@ app.use(rateLimiter);
 app.use(
     "/notifications",
     notificationRoutes
+);
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec)
 );
 app.get("/", async (req, res) => {
   try {

@@ -15,7 +15,65 @@ const redis = new IORedis({
     maxRetriesPerRequest: null
 });
 
-
+/**
+ * @swagger
+ * /notifications:
+ *   post:
+ *     summary: Queue a notification
+ *     description: Creates a notification, stores it in PostgreSQL and queues it for background processing.
+ *     tags:
+ *       - Notifications
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - eventType
+ *               - recipient
+ *               - channel
+ *             properties:
+ *               eventType:
+ *                 type: string
+ *                 example: ORDER_PLACED
+ *               recipient:
+ *                 type: string
+ *                 format: email
+ *                 example: user@example.com
+ *               channel:
+ *                 type: string
+ *                 enum:
+ *                   - EMAIL
+ *                   - SMS
+ *                   - PUSH
+ *                 example: EMAIL
+ *     responses:
+ *       201:
+ *         description: Notification queued successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   format: uuid
+ *                   example: 550e8400-e29b-41d4-a716-446655440000
+ *                 correlationId:
+ *                   type: string
+ *                   format: uuid
+ *                   example: 5de35c3d-b08f-4d96-91d6-4ec8e2484e61
+ *                 message:
+ *                   type: string
+ *                   example: Notification created
+ *       400:
+ *         description: Validation failed.
+ *       429:
+ *         description: Too many requests.
+ *       500:
+ *         description: Internal Server Error.
+ */
 router.post("/",validateNotification, async (req, res) => {
 
     try {
@@ -89,6 +147,40 @@ router.post("/",validateNotification, async (req, res) => {
     }
 
 });
+/**
+ * @swagger
+ * /notifications/{id}/replay:
+ *   post:
+ *     summary: Replay a failed notification
+ *     description: Requeues a notification that is currently in the FAILED state.
+ *     tags:
+ *       - Notifications
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Notification ID
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Notification replayed successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: Notification replayed successfully
+ *       400:
+ *         description: Notification is not in FAILED state.
+ *       404:
+ *         description: Notification not found.
+ *       500:
+ *         description: Internal Server Error.
+ */
 router.post("/:id/replay", async (req, res) => {
     try {
       const { id } = req.params;
@@ -153,6 +245,37 @@ router.post("/:id/replay", async (req, res) => {
       });
     }
   });
+/**
+ * @swagger
+ * /notifications/health:
+ *   get:
+ *     summary: Health check
+ *     description: Checks the health of the notification service, PostgreSQL and Redis.
+ *     tags:
+ *       - Monitoring
+ *     responses:
+ *       200:
+ *         description: Service is healthy.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: OK
+ *                 database:
+ *                   type: boolean
+ *                   example: true
+ *                 redis:
+ *                   type: boolean
+ *                   example: true
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *       500:
+ *         description: Service health check failed.
+ */
   router.get("/health", async (req, res) => {
     try {
       const dbResult = await pool.query("SELECT 1");
@@ -174,6 +297,43 @@ router.post("/:id/replay", async (req, res) => {
       });
     }
   });
+  /**
+ * @swagger
+ * /notifications/metrics:
+ *   get:
+ *     summary: Get queue metrics
+ *     description: Returns BullMQ queue statistics for the notification processing queue.
+ *     tags:
+ *       - Monitoring
+ *     responses:
+ *       200:
+ *         description: Queue metrics retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 queue:
+ *                   type: string
+ *                   example: notifications
+ *                 waiting:
+ *                   type: integer
+ *                   example: 2
+ *                 active:
+ *                   type: integer
+ *                   example: 1
+ *                 completed:
+ *                   type: integer
+ *                   example: 25
+ *                 failed:
+ *                   type: integer
+ *                   example: 3
+ *                 delayed:
+ *                   type: integer
+ *                   example: 0
+ *       500:
+ *         description: Internal Server Error.
+ */
   router.get("/metrics", async (req, res) => {
     try {
       const counts = await notificationQueue.getJobCounts(
