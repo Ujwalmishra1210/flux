@@ -2,6 +2,7 @@ const express = require("express");
 const logger = require("../logger");
 const crypto = require("crypto");
 const pool = require("../db/postgres");
+const validateNotification = require("../middleware/validateNotification");
 const notificationQueue =
     require("../queue/notificationQueue");
     const { Queue } = require("bullmq");
@@ -15,7 +16,7 @@ const redis = new IORedis({
 });
 
 
-router.post("/", async (req, res) => {
+router.post("/",validateNotification, async (req, res) => {
 
     try {
 
