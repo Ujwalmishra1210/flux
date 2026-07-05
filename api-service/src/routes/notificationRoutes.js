@@ -3,6 +3,7 @@ const logger = require("../logger");
 const crypto = require("crypto");
 const pool = require("../db/postgres");
 const validateNotification = require("../middleware/validateNotification");
+const apiKeyAuth = require("../middleware/apiKeyAuth");
 const notificationQueue =
     require("../queue/notificationQueue");
     const { Queue } = require("bullmq");
@@ -23,6 +24,8 @@ const redis = new IORedis({
  *     description: Creates a notification, stores it in PostgreSQL and queues it for background processing.
  *     tags:
  *       - Notifications
+ *     security:
+ *       - ApiKeyAuth: []
  *     requestBody:
  *       required: true
  *       content:
@@ -74,7 +77,7 @@ const redis = new IORedis({
  *       500:
  *         description: Internal Server Error.
  */
-router.post("/",validateNotification, async (req, res) => {
+router.post("/",apiKeyAuth,validateNotification, async (req, res) => {
 
     try {
 
@@ -163,6 +166,8 @@ router.post("/",validateNotification, async (req, res) => {
  *         schema:
  *           type: string
  *           format: uuid
+ *     security:
+ *       - ApiKeyAuth: []
  *     responses:
  *       200:
  *         description: Notification replayed successfully.
@@ -181,7 +186,7 @@ router.post("/",validateNotification, async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-router.post("/:id/replay", async (req, res) => {
+router.post("/:id/replay",apiKeyAuth, async (req, res) => {
     try {
       const { id } = req.params;
   
@@ -305,6 +310,8 @@ router.post("/:id/replay", async (req, res) => {
  *     description: Returns BullMQ queue statistics for the notification processing queue.
  *     tags:
  *       - Monitoring
+ *     security:
+ *       - ApiKeyAuth: []
  *     responses:
  *       200:
  *         description: Queue metrics retrieved successfully.
@@ -334,7 +341,7 @@ router.post("/:id/replay", async (req, res) => {
  *       500:
  *         description: Internal Server Error.
  */
-  router.get("/metrics", async (req, res) => {
+  router.get("/metrics",apiKeyAuth, async (req, res) => {
     try {
       const counts = await notificationQueue.getJobCounts(
         "waiting",

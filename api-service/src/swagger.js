@@ -7,14 +7,25 @@ const options = {
     info: {
       title: "Flux Notification API",
       version: "1.0.0",
-      description: "Notification service built with Express, BullMQ, Redis and PostgreSQL."
+      description:
+        "Notification service built with Express, BullMQ, Redis and PostgreSQL."
     },
 
     servers: [
       {
         url: "http://localhost:3000"
       }
-    ]
+    ],
+
+    components: {
+      securitySchemes: {
+        ApiKeyAuth: {
+          type: "apiKey",
+          in: "header",
+          name: "x-api-key"
+        }
+      }
+    }
   },
 
   apis: ["./src/routes/*.js"]
