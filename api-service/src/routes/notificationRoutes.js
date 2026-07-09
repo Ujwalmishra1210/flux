@@ -2,6 +2,7 @@ const express = require("express");
 const logger = require("../logger");
 const crypto = require("crypto");
 const pool = require("../db/postgres");
+const { notificationCounter } = require("../metrics");
 const validateNotification = require("../middleware/validateNotification");
 const apiKeyAuth = require("../middleware/apiKeyAuth");
 const notificationQueue =
@@ -126,6 +127,7 @@ router.post("/",apiKeyAuth,validateNotification, async (req, res) => {
             }
           }
         );
+        notificationCounter.inc();
         logger.info("Notification queued", {
           notificationId: id,
           correlationId,
@@ -229,6 +231,7 @@ router.post("/:id/replay",apiKeyAuth, async (req, res) => {
         "send-notification",
         {
           notificationId: id,
+          correlationId: crypto.randomUUID()
         },
         {
           attempts: 3,

@@ -2,7 +2,12 @@ require("dotenv").config();
 
 const { Worker, Queue } = require("bullmq");
 const IORedis = require("ioredis");
-
+const express = require("express");
+const {
+  client,
+  notificationsSentCounter,
+  notificationsFailedCounter
+} = require("./metrics");
 const pool = require("./db/postgres");
 const logger = require("./logger");
 const connection = new IORedis({
@@ -15,6 +20,7 @@ const redis = new IORedis({
   port: process.env.REDIS_PORT,
   maxRetriesPerRequest: null,
 });
+
 const getLockKey = (id) => `notification:${id}`;
 let failureCount = 0;
 let circuitOpen = false;
@@ -26,6 +32,16 @@ const deadLetterQueue = new Queue(
     connection,
   }
 );
+const app = express();
+
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
+app.listen(3001, () => {
+  logger.info("Worker metrics server running on port 3001");
+});
 const worker = new Worker(
   "notifications",
   async (job) => {
@@ -154,6 +170,7 @@ if (failureCount >= FAILURE_THRESHOLD) {
       `,
       [notificationId]
     );
+    notificationsSentCounter.inc();
     try {
       await redis.del(lockKey);
     } catch (e) {
@@ -223,7 +240,7 @@ worker.on(
           notificationId
         ]
       );
-
+      notificationsFailedCounter.inc();
       try {
         await redis.del(lockKey);
       } catch (e) {

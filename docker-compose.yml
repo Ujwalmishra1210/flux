@@ -14,3 +14,26 @@ services:
     container_name: flux-redis
     ports:
       - "6379:6379"
+
+  prometheus:
+    image: prom/prometheus
+    container_name: flux-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss
+    container_name: flux-grafana
+    ports:
+      - "3002:3000"
+    restart: unless-stopped
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  grafana-data:

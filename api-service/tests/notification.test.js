@@ -1,12 +1,12 @@
 const request = require("supertest");
 const app = require("../src/app");
-const { valid } = require("joi");
+
 const validNotification = {
   eventType: "ORDER_PLACED",
   recipient: "user@example.com",
   channel: "EMAIL"
 };
-describe("Health API", () => {
+describe("Notification API", () => {
  
 
   test("POST /notifications without API key should return 401", async () => {
@@ -45,6 +45,64 @@ describe("Health API", () => {
     expect(response.body).toHaveProperty("id");
     expect(response.body).toHaveProperty("correlationId");
     expect(response.body.message).toBe("Notification created");
+  });
+
+  test("POST /notifications with invalid channel should return 400", async () => {
+    const response = await request(app)
+      .post("/notifications")
+      .set("x-api-key", process.env.API_KEY)
+      .send({
+        ...validNotification,
+        channel: "WHATSAPP"
+      });
+  
+    expect(response.statusCode).toBe(400);
+  
+    expect(response.body).toHaveProperty("error");
+  });
+  test("POST /notifications without recipient should return 400", async () => {
+    const invalidNotification = {
+      ...validNotification
+    };
+  
+    delete invalidNotification.recipient;
+  
+    const response = await request(app)
+      .post("/notifications")
+      .set("x-api-key", process.env.API_KEY)
+      .send(invalidNotification);
+  
+    expect(response.statusCode).toBe(400);
+  
+    expect(response.body).toHaveProperty("error");
+  });
+
+  test("POST /notifications without eventType should return 400", async () => {
+    const invalidNotification = {
+      ...validNotification
+    };
+  
+    delete invalidNotification.eventType;
+  
+    const response = await request(app)
+      .post("/notifications")
+      .set("x-api-key", process.env.API_KEY)
+      .send(invalidNotification);
+  
+    expect(response.statusCode).toBe(400);
+  
+    expect(response.body).toHaveProperty("error");
+  });
+
+  test("POST /notifications with empty body should return 400", async () => {
+    const response = await request(app)
+      .post("/notifications")
+      .set("x-api-key", process.env.API_KEY)
+      .send({});
+  
+    expect(response.statusCode).toBe(400);
+  
+    expect(response.body).toHaveProperty("error");
   });
 });
 

@@ -7,10 +7,17 @@ const notificationRoutes =
     const rateLimiter = require("./middleware/rateLimiter");
     const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./swagger");
+const { client } = require("./metrics");
 const app = express();
 
 app.use(express.json());
-app.use(rateLimiter);
+app.use((req, res, next) => {
+  if (req.path === "/metrics") {
+    return next();
+  }
+
+  rateLimiter(req, res, next);
+});
 app.use(
     "/notifications",
     notificationRoutes
@@ -29,5 +36,8 @@ app.get("/", async (req, res) => {
     res.status(500).send("DB Error");
   }
 });
-
+app.get("/metrics", async (req, res) => {
+  res.set("Content-Type", client.register.contentType);
+  res.end(await client.register.metrics());
+});
 module.exports = app;
