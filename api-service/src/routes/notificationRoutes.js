@@ -5,6 +5,8 @@ const pool = require("../db/postgres");
 const { notificationCounter } = require("../metrics");
 const validateNotification = require("../middleware/validateNotification");
 const apiKeyAuth = require("../middleware/apiKeyAuth");
+const validateNotificationQuery =
+require("../middleware/validateNotificationQuery");
 const redis = require("../db/redis");
 const notificationQueue =
     require("../queue/notificationQueue");
@@ -361,6 +363,385 @@ router.post("/:id/replay",apiKeyAuth, async (req, res) => {
   
       res.status(500).json({
         error: err.message
+      });
+    }
+  });
+  /**
+ * @swagger
+ * /notifications:
+ *   get:
+ *     summary: List notifications
+ *     description: Retrieves notifications with optional status filtering and pagination, ordered by newest first.
+ *     tags:
+ *       - Notifications
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         description: Page number.
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *           example: 1
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         description: Number of notifications to return per page.
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *           example: 10
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         description: Filter notifications by status.
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - PENDING
+ *             - PROCESSING
+ *             - SENT
+ *             - FAILED
+ *           example: SENT
+ *       - in: query
+ *         name: channel
+ *         required: false
+ *         description: Filter notifications by delivery channel.
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - EMAIL
+ *             - SMS
+ *             - PUSH
+ *           example: EMAIL 
+ *       - in: query
+ *         name: eventType
+ *         required: false
+ *         description: Filter notifications by event type.
+ *         schema:
+ *           type: string
+ *           example: ORDER_PLACED
+  *       - in: query
+ *         name: sortBy
+ *         required: false
+ *         description: Field used for sorting notifications.
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - created_at
+ *             - status
+ *             - channel
+ *             - event_type
+ *           default: created_at
+ *           example: created_at
+ *       - in: query
+ *         name: order
+ *         required: false
+ *         description: Sorting direction.
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - asc
+ *             - desc
+ *           default: desc
+ *           example: desc      
+ *     responses:
+ *       200:
+ *         description: Notifications retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 page:
+ *                   type: integer
+ *                   example: 1
+ *                 limit:
+ *                   type: integer
+ *                   example: 10
+ *                 total:
+ *                   type: integer
+ *                   example: 57
+ *                   description: Total number of notifications matching the applied filters.
+ *                 totalPages:
+ *                   type: integer
+ *                   example: 6
+ *                   description: Total number of available pages.
+ *                 notifications:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         format: uuid
+ *                         example: 0d35e70f-1522-421a-ad01-cbf02b0b9085
+ *                       recipient:
+ *                         type: string
+ *                         example: user@example.com
+ *                       channel:
+ *                         type: string
+ *                         example: EMAIL
+ *                       event_type:
+ *                         type: string
+ *                         example: ORDER_PLACED
+ *                       status:
+ *                         type: string
+ *                         example: SENT
+ *                       failure_reason:
+ *                         type: string
+ *                         nullable: true
+ *                         example: Notification provider unavailable
+ *                       created_at:
+ *                         type: string
+ *                         format: date-time
+ *                       failed_at:
+ *                         type: string
+ *                         format: date-time
+ *                         nullable: true
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.get("/",apiKeyAuth,validateNotificationQuery, async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    const {
+      status,
+      channel,
+      eventType,
+      sortBy = "created_at",
+      order = "desc"
+  } = req.query;
+    const allowedSortFields = [
+      "created_at",
+      "status",
+      "channel",
+      "event_type"
+  ];
+
+    const allowedOrder = [
+        "asc",
+        "desc"
+    ];
+
+    const sortField = allowedSortFields.includes(sortBy)
+        ? sortBy
+        : "created_at";
+
+    const sortOrder = allowedOrder.includes(order.toLowerCase())
+        ? order.toUpperCase()
+        : "DESC";
+    let query = `
+      SELECT
+          id,
+          recipient,
+          channel,
+          event_type,
+          status,
+          failure_reason,
+          created_at,
+          failed_at
+      FROM notifications
+`;
+
+    const values = [];
+    const conditions = [];
+
+    if (status) {
+        conditions.push(`status = $${values.length + 1}`);
+        values.push(status);
+    }
+
+    if (channel) {
+        conditions.push(`channel = $${values.length + 1}`);
+        values.push(channel);
+    }
+    if (eventType) {
+      conditions.push(`event_type = $${values.length + 1}`);
+      values.push(eventType);
+  }
+
+    if (conditions.length > 0) {
+        query += ` WHERE ` + conditions.join(" AND ");
+    }
+
+    query += `
+    ORDER BY ${sortField} ${sortOrder}
+    LIMIT $${values.length + 1}
+    OFFSET $${values.length + 2}
+    `;
+
+    values.push(limit);
+    values.push(offset);
+
+    const result = await pool.query(query, values);
+    let countQuery = `
+      SELECT COUNT(*) 
+      FROM notifications
+      `;
+
+    const countValues = [];
+    const countConditions = [];
+
+    if (status) {
+        countConditions.push(`status = $${countValues.length + 1}`);
+        countValues.push(status);
+    }
+
+    if (channel) {
+        countConditions.push(`channel = $${countValues.length + 1}`);
+        countValues.push(channel);
+    }
+
+    if (eventType) {
+        countConditions.push(`event_type = $${countValues.length + 1}`);
+        countValues.push(eventType);
+    }
+
+    if (countConditions.length > 0) {
+        countQuery += ` WHERE ${countConditions.join(" AND ")}`;
+    }
+
+    const countResult = await pool.query(
+        countQuery,
+        countValues
+    );
+
+    const total = Number(countResult.rows[0].count);
+
+    const totalPages = Math.ceil(total / limit);
+    res.json({
+      page,
+      limit,
+      total,
+      totalPages,
+      notifications: result.rows
+  });
+
+  } catch (err) {
+    logger.error("Failed to fetch notifications", {
+      error: err.message,
+    });
+
+    res.status(500).json({
+      error: "Internal Server Error",
+    });
+  }
+});
+ /**
+ * @swagger
+ * /notifications/{id}:
+ *   get:
+ *     summary: Get notification by ID
+ *     description: Retrieves the details of a specific notification using its unique notification ID.
+ *     tags:
+ *       - Notifications
+ *     security:
+ *       - ApiKeyAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Unique notification ID.
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *           example: 0d35e70f-1522-421a-ad01-cbf02b0b9085
+ *     responses:
+ *       200:
+ *         description: Notification retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   format: uuid
+ *                   example: 0d35e70f-1522-421a-ad01-cbf02b0b9085
+ *                 recipient:
+ *                   type: string
+ *                   example: user@example.com
+ *                 channel:
+ *                   type: string
+ *                   example: EMAIL
+ *                 event_type:
+ *                   type: string
+ *                   example: ORDER_PLACED
+ *                 status:
+ *                   type: string
+ *                   example: SENT
+ *                 failure_reason:
+ *                   type: string
+ *                   nullable: true
+ *                   example: Notification provider unavailable
+ *                 created_at:
+ *                   type: string
+ *                   format: date-time
+ *                 failed_at:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *       404:
+ *         description: Notification not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Notification not found
+ *       500:
+ *         description: Internal Server Error.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: Internal Server Error
+ */
+  router.get("/:id", apiKeyAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+  
+      const result = await pool.query(
+        `
+          SELECT
+            id,
+            recipient,
+            channel,
+            event_type,
+            status,
+            failure_reason,
+            created_at,
+            failed_at
+          FROM notifications
+          WHERE id = $1
+        `,
+        [id]
+      );
+  
+      if (result.rowCount === 0) {
+        return res.status(404).json({
+          error: "Notification not found",
+        });
+      }
+  
+      res.json(result.rows[0]);
+  
+    } catch (err) {
+      console.error(err);
+  
+      res.status(500).json({
+        error: "Internal Server Error",
       });
     }
   });
