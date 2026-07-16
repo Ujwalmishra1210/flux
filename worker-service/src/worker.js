@@ -20,7 +20,17 @@ const redis = new IORedis({
   port: process.env.REDIS_PORT,
   maxRetriesPerRequest: null,
 });
+connection.on("error", (err) => {
+  logger.error("BullMQ Redis connection error", {
+    error: err.message,
+  });
+});
 
+redis.on("error", (err) => {
+  logger.error("Redis client error", {
+    error: err.message,
+  });
+});
 const getLockKey = (id) => `notification:${id}`;
 let failureCount = 0;
 let circuitOpen = false;
@@ -38,7 +48,46 @@ app.get("/metrics", async (req, res) => {
   res.set("Content-Type", client.register.contentType);
   res.end(await client.register.metrics());
 });
+app.get("/health", async (req, res) => {
+  const checks = {};
 
+  try {
+    await pool.query("SELECT 1");
+    checks.postgres = "up";
+  } catch (err) {
+    checks.postgres = "down";
+  }
+
+  try {
+    const healthRedis = new IORedis({
+      host: process.env.REDIS_HOST,
+      port: process.env.REDIS_PORT,
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false,
+      lazyConnect: true,
+    });
+
+    healthRedis.on("error", () => {});
+
+    await healthRedis.connect();
+    await healthRedis.ping();
+    await healthRedis.quit();
+
+    checks.redis = "up";
+  } catch (err) {
+    checks.redis = "down";
+  }
+
+  const healthy =
+    checks.postgres === "up" &&
+    checks.redis === "up";
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? "healthy" : "unhealthy",
+    service: "worker-service",
+    checks,
+  });
+});
 app.listen(3001, () => {
   logger.info("Worker metrics server running on port 3001");
 });

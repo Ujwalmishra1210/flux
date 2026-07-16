@@ -6,13 +6,14 @@ const notificationRoutes =
     require("./routes/notificationRoutes");
     const rateLimiter = require("./middleware/rateLimiter");
     const swaggerUi = require("swagger-ui-express");
+const healthRoutes = require("./routes/healthRoutes");
 const swaggerSpec = require("./swagger");
 const { client } = require("./metrics");
 const app = express();
 
 app.use(express.json());
 app.use((req, res, next) => {
-  if (req.path === "/metrics") {
+  if (req.path === "/metrics" || req.path === "/health") {
     return next();
   }
 
@@ -27,6 +28,7 @@ app.use(
   swaggerUi.serve,
   swaggerUi.setup(swaggerSpec)
 );
+app.use("/health", healthRoutes);
 app.get("/", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
