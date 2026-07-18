@@ -633,6 +633,80 @@ router.get("/",apiKeyAuth,validateNotificationQuery, async (req, res) => {
     });
   }
 });
+/**
+ * @swagger
+ * /notifications/stats:
+ *   get:
+ *     summary: Get notification statistics
+ *     description: Returns aggregated notification statistics grouped by status.
+ *     tags:
+ *       - Notifications
+ *     security:
+ *       - ApiKeyAuth: []
+ *     responses:
+ *       200:
+ *         description: Notification statistics retrieved successfully.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 total:
+ *                   type: integer
+ *                   example: 125
+ *                   description: Total number of notifications.
+ *                 pending:
+ *                   type: integer
+ *                   example: 8
+ *                   description: Number of pending notifications.
+ *                 processing:
+ *                   type: integer
+ *                   example: 2
+ *                   description: Number of notifications currently being processed.
+ *                 sent:
+ *                   type: integer
+ *                   example: 110
+ *                   description: Number of successfully delivered notifications.
+ *                 failed:
+ *                   type: integer
+ *                   example: 5
+ *                   description: Number of failed notifications.
+ *       500:
+ *         description: Internal Server Error.
+ */
+router.get("/stats", apiKeyAuth, async (req, res) => {
+  try {
+
+      const result = await pool.query(`
+          SELECT
+              COUNT(*) AS total,
+              COUNT(*) FILTER (WHERE status = 'PENDING') AS pending,
+              COUNT(*) FILTER (WHERE status = 'PROCESSING') AS processing,
+              COUNT(*) FILTER (WHERE status = 'SENT') AS sent,
+              COUNT(*) FILTER (WHERE status = 'FAILED') AS failed
+          FROM notifications
+      `);
+
+      const stats = result.rows[0];
+      logger.info("Notification statistics retrieved");
+      res.json({
+          total: Number(stats.total),
+          pending: Number(stats.pending),
+          processing: Number(stats.processing),
+          sent: Number(stats.sent),
+          failed: Number(stats.failed)
+      });
+
+  } catch (err) {
+
+      console.error(err);
+
+      res.status(500).json({
+          error: "Internal Server Error"
+      });
+
+  }
+});
  /**
  * @swagger
  * /notifications/{id}:
@@ -745,4 +819,5 @@ router.get("/",apiKeyAuth,validateNotificationQuery, async (req, res) => {
       });
     }
   });
+ 
 module.exports = router;
