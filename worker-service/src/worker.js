@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const { Worker, Queue } = require("bullmq");
 const IORedis = require("ioredis");
+
 const express = require("express");
 const {
   client,
@@ -10,6 +11,7 @@ const {
 } = require("./metrics");
 const pool = require("./db/postgres");
 const logger = require("./logger");
+const { getProvider } = require("./providers/providerFactory");
 const connection = new IORedis({
   host: process.env.REDIS_HOST,
   port: process.env.REDIS_PORT,
@@ -20,6 +22,7 @@ const redis = new IORedis({
   port: process.env.REDIS_PORT,
   maxRetriesPerRequest: null,
 });
+
 connection.on("error", (err) => {
   logger.error("BullMQ Redis connection error", {
     error: err.message,
@@ -131,7 +134,7 @@ const worker = new Worker(
 
     const result = await pool.query(
       `
-      SELECT status
+      SELECT status,channel
       FROM notifications
       WHERE id = $1
       `,
@@ -146,6 +149,8 @@ const worker = new Worker(
       });
       return;
     }
+    const notification = result.rows[0];
+    const provider = getProvider(notification.channel);
     logger.info("Processing attempt", {
       notificationId,
       correlationId,
@@ -172,40 +177,34 @@ const worker = new Worker(
         return;
       }
 
-      const shouldFail = Math.random() < 0.5;
-
-    if (shouldFail) {
-
-      logger.warn("Simulated failure", {
-        notificationId,
-        correlationId,
-        jobId: job.id
-      });
-      failureCount++;
-
-if (failureCount >= FAILURE_THRESHOLD) {
-  circuitOpen = true;
-
-  logger.error("Circuit opened", {
-    failureCount
-  });
-
-  setTimeout(() => {
-    circuitOpen = false;
-    failureCount = 0;
-    logger.info("Circuit reset");
-  }, CIRCUIT_RESET_TIME);
-}
-      throw new Error(
-        "Notification provider unavailable"
-      );
-
-    }
-
-    await new Promise(
-      resolve =>
-        setTimeout(resolve, 3000)
-    );
+      try {
+        await provider.send(notification);
+      } catch (err) {
+      
+        logger.warn(err.message, {
+          notificationId,
+          correlationId,
+          jobId: job.id
+        });
+      
+        failureCount++;
+      
+        if (failureCount >= FAILURE_THRESHOLD) {
+          circuitOpen = true;
+      
+          logger.error("Circuit opened", {
+            failureCount
+          });
+      
+          setTimeout(() => {
+            circuitOpen = false;
+            failureCount = 0;
+            logger.info("Circuit reset");
+          }, CIRCUIT_RESET_TIME);
+        }
+      
+        throw err;
+      }
 
     await pool.query(
       `
