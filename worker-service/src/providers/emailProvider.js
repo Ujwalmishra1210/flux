@@ -2,7 +2,8 @@ const NotificationProvider = require("./notificationProvider");
 
 class EmailProvider extends NotificationProvider {
   async send(notification) {
-    console.log("EMAIL provider called");   
+    console.log("EMAIL provider called");
+    console.log(notification); 
     const shouldFail = Math.random() < 0.5;
 
     if (shouldFail) {

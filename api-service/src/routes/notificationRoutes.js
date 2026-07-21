@@ -230,14 +230,15 @@ router.post("/:id/replay",apiKeyAuth, async (req, res) => {
         "send-notification",
         {
           notificationId: id,
-          correlationId: crypto.randomUUID()
+          correlationId,
+          data: req.body.data || {}
         },
         {
           attempts: 3,
           backoff: {
             type: "exponential",
-            delay: 2000,
-          },
+            delay: 2000
+          }
         }
       );
   

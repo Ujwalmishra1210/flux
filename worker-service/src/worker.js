@@ -2,7 +2,10 @@ require("dotenv").config();
 
 const { Worker, Queue } = require("bullmq");
 const IORedis = require("ioredis");
-
+const {
+  getTemplate,
+  renderTemplate
+} = require("./services/templateService");
 const express = require("express");
 const {
   client,
@@ -134,7 +137,11 @@ const worker = new Worker(
 
     const result = await pool.query(
       `
-      SELECT status,channel
+        SELECT
+        event_type,
+        recipient,
+        channel,
+        status
       FROM notifications
       WHERE id = $1
       `,
@@ -151,6 +158,17 @@ const worker = new Worker(
     }
     const notification = result.rows[0];
     const provider = getProvider(notification.channel);
+    const template = await getTemplate(
+      notification.event_type,
+      notification.channel
+    );
+    
+    const subject = template.subject;
+    
+    const body = renderTemplate(
+      template.body,
+      job.data.data
+    );
     logger.info("Processing attempt", {
       notificationId,
       correlationId,
@@ -178,7 +196,11 @@ const worker = new Worker(
       }
 
       try {
-        await provider.send(notification);
+        await provider.send({
+          ...notification,
+          subject,
+          body
+        });
       } catch (err) {
       
         logger.warn(err.message, {

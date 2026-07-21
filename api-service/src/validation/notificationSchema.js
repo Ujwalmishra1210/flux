@@ -3,10 +3,6 @@ const Joi = require("joi");
 const notificationSchema = Joi.object({
   eventType: Joi.string().trim().required(),
 
-  channel: Joi.string()
-    .valid("EMAIL", "SMS", "PUSH")
-    .required(),
-
   recipient: Joi.alternatives().conditional("channel", {
     switch: [
       {
@@ -24,7 +20,13 @@ const notificationSchema = Joi.object({
         then: Joi.string().min(10).required()
       }
     ]
-  })
+  }),
+
+  channel: Joi.string()
+    .valid("EMAIL", "SMS", "PUSH")
+    .required(),
+
+  data: Joi.object().default({})
 });
 
 module.exports = notificationSchema;

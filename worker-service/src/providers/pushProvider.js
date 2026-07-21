@@ -3,6 +3,7 @@ const NotificationProvider = require("./notificationProvider");
 class PushProvider extends NotificationProvider {
   async send(notification) {
     console.log("PUSH provider called");
+    console.log(notification);
     const shouldFail = Math.random() < 0.5;
 
     if (shouldFail) {
