@@ -169,6 +169,7 @@ const worker = new Worker(
       template.body,
       job.data.data
     );
+  
     logger.info("Processing attempt", {
       notificationId,
       correlationId,

@@ -81,51 +81,60 @@ router.post("/",apiKeyAuth,validateNotification, async (req, res) => {
 
     try {
 
-        const {
-            eventType,
-            recipient,
-            channel
-        } = req.body;
+      const {
+        eventType,
+        recipient,
+        channel,
+        data,
+        scheduledAt
+    } = req.body;
 
         const id = crypto.randomUUID();
         const correlationId = crypto.randomUUID();
         await pool.query(
-            `
-            INSERT INTO notifications
-            (
-                id,
-                event_type,
-                recipient,
-                channel,
-                status
-            )
-            VALUES
-            (
-                $1,$2,$3,$4,$5
-            )
+              `
+                INSERT INTO notifications
+                  (
+                      id,
+                      event_type,
+                      recipient,
+                      channel,
+                      status,
+                      scheduled_at
+                  )
+                  VALUES
+                  (
+                      $1,$2,$3,$4,$5,$6
+                  )
             `,
             [
-                id,
-                eventType,
-                recipient,
-                channel,
-                "PENDING"
-            ]
+              id,
+              eventType,
+              recipient,
+              channel,
+              "PENDING",
+              scheduledAt || null
+          ]
         );
-        await notificationQueue.add(
-          "send-notification",
-          {
-            notificationId: id,
-            correlationId
-          },
-          {
-            attempts: 3,
-            backoff: {
-              type: "exponential",
-              delay: 2000
+        const delay = scheduledAt
+          ? Math.max(new Date(scheduledAt).getTime() - Date.now(), 0)
+          : 0;
+          await notificationQueue.add(
+            "send-notification",
+            {
+              notificationId: id,
+              correlationId,
+              data: data || {}
+            },
+            {
+              delay,
+              attempts: 3,
+              backoff: {
+                type: "exponential",
+                delay: 2000
+              }
             }
-          }
-        );
+          );
         notificationCounter.inc();
         logger.info("Notification queued", {
           notificationId: id,

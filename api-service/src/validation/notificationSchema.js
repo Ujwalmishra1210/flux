@@ -26,7 +26,12 @@ const notificationSchema = Joi.object({
     .valid("EMAIL", "SMS", "PUSH")
     .required(),
 
-  data: Joi.object().default({})
+    data: Joi.object().default({}),
+
+    scheduledAt: Joi.date()
+      .iso()
+      .greater("now")
+      .optional()
 });
 
 module.exports = notificationSchema;
