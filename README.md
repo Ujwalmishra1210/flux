@@ -321,18 +321,7 @@ Flux implements several production-inspired reliability patterns:
 
 ---
 
-# Future Improvements
 
-Possible extensions include:
 
-- Real email integration (SendGrid, Amazon SES, etc.)
-- SMS provider integration
-- Push notification support
-- Notification preferences
-- Rate limiting per recipient
-- Horizontal worker scaling
-- Kubernetes deployment
-- Distributed tracing with OpenTelemetry
 
----
 
