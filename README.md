@@ -265,8 +265,46 @@ Username: admin
 Password: admin
 ```
 
+
 ---
 
+## Dashboard Screenshots
+
+### API Documentation
+
+Swagger UI provides interactive API documentation for Flux notification endpoints.
+
+![Swagger API](docs/screenshots/swagger-api.png)
+
+
+### Business Metrics Dashboard
+
+Displays overall notification statistics including created notifications, sent notifications, failed notifications, and success rate.
+
+![Business Metrics](docs/screenshots/business-metrics.png)
+
+
+### Queue Health Dashboard
+
+Shows BullMQ queue status including waiting jobs, active jobs, completed jobs, failed jobs, and delayed jobs.
+
+![Queue Health](docs/screenshots/queue-health.png)
+
+
+### Worker Health Dashboard
+
+Shows worker service health and dependency monitoring.
+
+![Worker Health](docs/screenshots/worker-health.png)
+
+
+### Notification Rates and Queue Activity
+
+Displays notification processing rates and queue activity trends over time.
+
+![Notification Rates and Queue Activity](docs/screenshots/notification-rates-queue-activity.png)
+
+---
 # Reliability Features
 
 Flux implements several production-inspired reliability patterns:
