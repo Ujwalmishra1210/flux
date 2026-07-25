@@ -4,7 +4,7 @@ class PushProvider extends NotificationProvider {
   async send(notification) {
     console.log("PUSH provider called");
     console.log(notification);
-    const shouldFail = Math.random() < 0.5;
+    const shouldFail = Math.random() < 0.10;
 
     if (shouldFail) {
       throw new Error("Push provider unavailable");

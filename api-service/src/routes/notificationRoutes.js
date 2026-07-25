@@ -92,30 +92,33 @@ router.post("/",apiKeyAuth,validateNotification, async (req, res) => {
         const id = crypto.randomUUID();
         const correlationId = crypto.randomUUID();
         await pool.query(
-              `
-                INSERT INTO notifications
-                  (
-                      id,
-                      event_type,
-                      recipient,
-                      channel,
-                      status,
-                      scheduled_at
-                  )
-                  VALUES
-                  (
-                      $1,$2,$3,$4,$5,$6
-                  )
-            `,
-            [
+          `
+          INSERT INTO notifications
+          (
               id,
-              eventType,
+              correlation_id,
+              event_type,
               recipient,
               channel,
-              "PENDING",
-              scheduledAt || null
+              status,
+              scheduled_at
+          )
+          VALUES
+          (
+              $1, $2, $3, $4, $5, $6, $7
+          )
+          `,
+          [
+            id,
+            correlationId,
+            eventType,
+            recipient,
+            channel,
+            "PENDING",
+            scheduledAt || null
           ]
         );
+        notificationCounter.inc();
         const delay = scheduledAt
           ? Math.max(new Date(scheduledAt).getTime() - Date.now(), 0)
           : 0;
@@ -135,7 +138,7 @@ router.post("/",apiKeyAuth,validateNotification, async (req, res) => {
               }
             }
           );
-        notificationCounter.inc();
+       
         logger.info("Notification queued", {
           notificationId: id,
           correlationId,

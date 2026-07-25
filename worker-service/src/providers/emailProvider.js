@@ -4,7 +4,7 @@ class EmailProvider extends NotificationProvider {
   async send(notification) {
     console.log("EMAIL provider called");
     console.log(notification); 
-    const shouldFail = Math.random() < 0.5;
+    const shouldFail = Math.random() < 0.4;
 
     if (shouldFail) {
       throw new Error("Email provider unavailable");

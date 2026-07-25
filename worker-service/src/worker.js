@@ -10,7 +10,13 @@ const express = require("express");
 const {
   client,
   notificationsSentCounter,
-  notificationsFailedCounter
+  notificationsFailedCounter,
+  queueWaitingGauge,
+  queueActiveGauge,
+  queueDelayedGauge,
+  queueCompletedGauge,
+  queueFailedGauge,
+  deadLetterQueueGauge
 } = require("./metrics");
 const pool = require("./db/postgres");
 const logger = require("./logger");
@@ -48,6 +54,13 @@ const deadLetterQueue = new Queue(
     connection,
   }
 );
+const notificationQueue = new Queue(
+  "notifications",
+  {
+    connection,
+  }
+);
+
 const app = express();
 
 app.get("/metrics", async (req, res) => {
@@ -94,6 +107,33 @@ app.get("/health", async (req, res) => {
     checks,
   });
 });
+setInterval(async () => {
+  try {
+    const notificationCounts =
+      await notificationQueue.getJobCounts();
+
+    queueWaitingGauge.set(notificationCounts.waiting || 0);
+    queueActiveGauge.set(notificationCounts.active || 0);
+    queueDelayedGauge.set(notificationCounts.delayed || 0);
+    queueCompletedGauge.set(notificationCounts.completed || 0);
+    queueFailedGauge.set(notificationCounts.failed || 0);
+
+    const dlqCounts =
+      await deadLetterQueue.getJobCounts();
+
+    deadLetterQueueGauge.set(
+      (dlqCounts.waiting || 0) +
+      (dlqCounts.active || 0) +
+      (dlqCounts.completed || 0) +
+      (dlqCounts.failed || 0)
+    );
+
+  } catch (err) {
+    logger.error("Failed to update queue metrics", {
+      error: err.message
+    });
+  }
+}, 5000);
 app.listen(3001, () => {
   logger.info("Worker metrics server running on port 3001");
 });
@@ -106,27 +146,33 @@ const worker = new Worker(
     } = job.data;
 
     if (circuitOpen) {
-      logger.warn("Circuit open - skipping notification", {
+      logger.warn("Circuit open - retrying notification later", {
         notificationId,
         correlationId,
         jobId: job.id
       });
-      return;
+    
+      throw new Error("Circuit breaker is open");
     }
     const lockKey = getLockKey(notificationId);
 
-    const existingLock = await redis.get(lockKey);
+    const lockAcquired = await redis.set(
+      lockKey,
+      "locked",
+      "NX",
+      "EX",
+      60
+    );
     
-    if (existingLock) {
+    if (!lockAcquired) {
       logger.warn("Duplicate job detected", {
         notificationId,
         correlationId,
         jobId: job.id
       });
+    
       return;
     }
-    
-    await redis.set(lockKey, "locked", "EX", 60);
     
 
     logger.info("Processing notification", {
@@ -154,6 +200,7 @@ const worker = new Worker(
         correlationId,
         jobId: job.id
       });
+      await redis.del(lockKey);
       return;
     }
     const notification = result.rows[0];
@@ -193,6 +240,7 @@ const worker = new Worker(
           correlationId,
           jobId: job.id
         });
+        await redis.del(lockKey);
         return;
       }
 

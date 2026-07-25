@@ -4,7 +4,7 @@ class SmsProvider extends NotificationProvider {
   async send(notification) {
     console.log("SMS provider called");
     console.log(notification);
-    const shouldFail = Math.random() < 0.5;
+    const shouldFail = Math.random() < 0.10;
 
     if (shouldFail) {
       throw new Error("SMS provider unavailable");
