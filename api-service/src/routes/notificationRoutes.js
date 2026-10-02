@@ -242,8 +242,8 @@ router.post("/:id/replay",apiKeyAuth, async (req, res) => {
         "send-notification",
         {
           notificationId: id,
-          correlationId,
-          data: req.body.data || {}
+          correlationId: notification.correlation_id,
+          data: req.body?.data || {}
         },
         {
           attempts: 3,

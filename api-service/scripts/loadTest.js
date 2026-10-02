@@ -1,9 +1,11 @@
+
+require("dotenv").config();
 const axios = require("axios");
 
 const API = "http://localhost:3000/notifications";
 
 const headers = {
-  "x-api-key": "flux_5dN9xQ2mL7vK8pR1cT4zY6wH3sB0eA"
+  "x-api-key": process.env.API_KEY
 };
 
 function randomOrderId() {
