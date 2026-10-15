@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const { Worker, Queue } = require("bullmq");
+const { Worker, Queue, DelayedError } = require("bullmq");
 const IORedis = require("ioredis");
 const {
   getTemplate,
@@ -44,8 +44,13 @@ redis.on("error", (err) => {
   });
 });
 const getLockKey = (id) => `notification:${id}`;
-let failureCount = 0;
-let circuitOpen = false;
+const breakers = {};
+const getBreaker = (channel) => {
+  if (!breakers[channel]) {
+    breakers[channel] = { failureCount: 0, open: false };
+  }
+  return breakers[channel];
+};
 const FAILURE_THRESHOLD = 3;
 const CIRCUIT_RESET_TIME = 30000; // 30 sec
 const deadLetterQueue = new Queue(
@@ -139,21 +144,12 @@ app.listen(3001, () => {
 });
 const worker = new Worker(
   "notifications",
-  async (job) => {
+  async (job, token) => {
     const {
       notificationId,
       correlationId
     } = job.data;
 
-    if (circuitOpen) {
-      logger.warn("Circuit open - retrying notification later", {
-        notificationId,
-        correlationId,
-        jobId: job.id
-      });
-    
-      throw new Error("Circuit breaker is open");
-    }
     const lockKey = getLockKey(notificationId);
 
     const lockAcquired = await redis.set(
@@ -204,6 +200,20 @@ const worker = new Worker(
       return;
     }
     const notification = result.rows[0];
+    const breaker = getBreaker(notification.channel);
+
+    if (breaker.open) {
+      logger.warn("Circuit open - delaying notification", {
+        notificationId,
+        correlationId,
+        jobId: job.id,
+        channel: notification.channel
+      });
+      await redis.del(lockKey);
+      await job.moveToDelayed(Date.now() + CIRCUIT_RESET_TIME, token);
+      throw new DelayedError();
+    }
+
     const provider = getProvider(notification.channel);
     const template = await getTemplate(
       notification.event_type,
@@ -258,19 +268,20 @@ const worker = new Worker(
           jobId: job.id
         });
       
-        failureCount++;
+        breaker.failureCount++;
       
-        if (failureCount >= FAILURE_THRESHOLD) {
-          circuitOpen = true;
+        if (breaker.failureCount >= FAILURE_THRESHOLD) {
+          breaker.open = true;
       
           logger.error("Circuit opened", {
-            failureCount
+            channel: notification.channel,
+            failureCount: breaker.failureCount
           });
       
           setTimeout(() => {
-            circuitOpen = false;
-            failureCount = 0;
-            logger.info("Circuit reset");
+            breaker.open = false;
+            breaker.failureCount = 0;
+            logger.info("Circuit reset", { channel: notification.channel });
           }, CIRCUIT_RESET_TIME);
         }
       
@@ -303,7 +314,7 @@ const worker = new Worker(
       correlationId,
       jobId: job.id
     });
-    failureCount = 0;
+    breaker.failureCount = 0;
   },
   {
     connection,
